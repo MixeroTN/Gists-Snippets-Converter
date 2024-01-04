@@ -1,0 +1,35 @@
+{
+  "name": "gists-snippets-converter",
+  "version": "0.1.0",
+  "description": "Converts GitHub Gists to GitLab Snippets and vice versa.",
+  "keywords": ["gist", "gists", "snippet", "snippets", "gitlab", "github", "converter", "convert", "code"],
+  "homepage": "https://github.com/MixeroTN/gists-snippets-converter#readme",
+  "bugs": {
+    "url": "https://github.com/MixeroTN/gists-snippets-converter/issues",
+    "email": "shiro@mailo.com"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "MixeroTN",
+    "email": "shiro@mailo.com",
+    "url": "https://github.com/MixeroTN"
+  },
+  "funding": "https://bmc.link/mixerotn",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MixeroTN/gists-snippets-converter.git"
+  },
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/eslint": "^8.56.1",
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "npm@9.5.1"
+}
