@@ -59,7 +59,7 @@
           <a href="#">
             <object data="../../public/icon_header.svg" type="image/svg+xml"></object>
             <span>
-              <b>Gists – Snippets Converter</b>
+              Gists – Snippets Converter
             </span>
           </a>
         </div>
@@ -83,10 +83,21 @@
         </nav>
       </div>
     </header>
-    <main>
-      <section></section>
-      <aside></aside>
-    </main>
+    <div class="container">
+      <main class="center card">
+        <h1>2-way GitHub Gists & GitLab Snippets Converter</h1>
+        <div class="input_group">
+          <label for="mode">Convert Mode</label>
+          <select id="mode">
+            <option value="snippets">GitHub Gists to GitLab Snippets</option>
+            <option value="gists">GitLab Snippets to GitHub Gists</option>
+          </select>
+        </div>
+        <div class="connect_accounts"></div>
+        <div class="select_content"></div>
+        <div class="main_button"></div>
+      </main>
+    </div>
     <footer>
       <div class="footer_container">
         <nav class="footer_links">
