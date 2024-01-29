@@ -28,15 +28,33 @@ html {
     Noto Color Emoji;
 }
 
+footer {
+  width: 100%;
+  height: 80px;
+}
+
 header {
   position: relative;
   box-shadow: inset 0 -1px 0 #f6f6f6;
   border-bottom: 1px solid #d0d0d0;
 }
 
-footer {
+object {
+  pointer-events: none;
+}
+
+.invisible_button {
+  height: 100%;
   width: 100%;
-  height: 80px;
+  background-color: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.invisible_button picture {
+  height: 100%;
+  width: 100%;
 }
 
 .navigation_container {
@@ -83,7 +101,6 @@ footer {
 .navigation_logo a object {
   width: 40px;
   height: 40px;
-  pointer-events: none;
 }
 
 .navigation_logo a span {
