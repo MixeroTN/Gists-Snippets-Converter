@@ -2,7 +2,17 @@
   "name": "gists-snippets-converter",
   "version": "0.1.0",
   "description": "Converts GitHub Gists to GitLab Snippets and vice versa.",
-  "keywords": ["gist", "gists", "snippet", "snippets", "gitlab", "github", "converter", "convert", "code"],
+  "keywords": [
+    "gist",
+    "gists",
+    "snippet",
+    "snippets",
+    "gitlab",
+    "github",
+    "converter",
+    "convert",
+    "code"
+  ],
   "homepage": "https://github.com/MixeroTN/gists-snippets-converter#readme",
   "bugs": {
     "url": "https://github.com/MixeroTN/gists-snippets-converter/issues",
@@ -23,6 +33,7 @@
   "devDependencies": {
     "@types/eslint": "^8.56.3",
     "@types/node": "^20.11.20",
+    "@types/react": "^18.2.60",
     "@typescript-eslint/eslint-plugin": "^7.0.2",
     "@typescript-eslint/parser": "^7.0.2",
     "autoprefixer": "^10.4.17",
