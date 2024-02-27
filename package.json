@@ -30,7 +30,6 @@
     "url": "https://github.com/MixeroTN/gists-snippets-converter.git"
   },
   "private": true,
-  "type": "module",
   "devDependencies": {
     "@types/eslint": "^8.56.3",
     "@types/node": "^20.11.20",
