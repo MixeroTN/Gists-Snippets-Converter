@@ -30,17 +30,8 @@
     "url": "https://github.com/MixeroTN/gists-snippets-converter.git"
   },
   "private": true,
-  "devDependencies": {
-    "@types/eslint": "^8.56.3",
-    "@types/node": "^20.11.20",
-    "@types/react": "^18.2.60",
-    "@typescript-eslint/eslint-plugin": "^7.0.2",
-    "@typescript-eslint/parser": "^7.0.2",
-    "autoprefixer": "^10.4.17",
-    "eslint": "^8.57.0",
-    "next": "^14.1.0",
-    "prettier": "^3.2.5",
-    "typescript": "^5.3.3"
+  "scripts": {
+    "serve": "npx serve ."
   },
   "packageManager": "npm@10.2.4"
 }

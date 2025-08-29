@@ -1,19 +1,55 @@
+/**
+ * @typedef {Object} GistFile
+ * @property {string=} filename
+ * @property {string=} content
+ * @property {boolean=} truncated
+ */
+/**
+ * @typedef {Object<string, GistFile>} GistFilesMap
+ */
+/**
+ * @typedef {Object} Gist
+ * @property {string=} description
+ * @property {GistFilesMap=} files
+ * @property {string=} html_url
+ * @property {string=} url
+ */
+/**
+ * @typedef {Object} GitLabSnippetFile
+ * @property {string=} file_path
+ * @property {string=} file_name
+ * @property {string=} path
+ */
+/**
+ * @typedef {Object} GitLabSnippetMeta
+ * @property {string=} title
+ * @property {string=} file_name
+ * @property {Array<GitLabSnippetFile>=} files
+ * @property {string=} web_url
+ * @property {string=} url
+ * @property {(number|string)=} id
+ */
+/**
+ * @typedef {Object} CreatedGist
+ * @property {string=} html_url
+ * @property {string=} url
+ */
 (function init() {
   if (typeof document === 'undefined') {
     // Running in a non-browser environment (e.g., Node/SSR). Skip DOM-dependent initialization.
     return;
   }
   document.addEventListener('DOMContentLoaded', () => {
-  const modeSelect = document.getElementById('mode');
-  const connectContainer = document.querySelector('.connect_accounts');
-  const selectContentContainer = document.querySelector('.select_content');
-  const mainButtonContainer = document.querySelector('.main_button');
+  /** @type {HTMLSelectElement} */ const modeSelect = document.getElementById('mode');
+  /** @type {HTMLElement} */ const connectContainer = document.querySelector('.connect_accounts');
+  /** @type {HTMLElement} */ const selectContentContainer = document.querySelector('.select_content');
+  /** @type {HTMLElement} */ const mainButtonContainer = document.querySelector('.main_button');
 
   // Build UI
   connectContainer.innerHTML = `
     <div class="card section">
       <h2>Connect Accounts</h2>
-      <p>Provide Personal Access Tokens (PATs). They are kept only in this page (not stored anywhere).</p>
+      <p>Provide Personal Access Tokens (PATs). They are kept only on this page (not stored anywhere).</p>
       <div class="input_group">
         <label for="gh_token">GitHub Token <small>(scope: gist)</small></label>
         <input id="gh_token" type="password" placeholder="ghp_..." />
@@ -83,21 +119,58 @@
 
   async function handleConvert() {
     const mode = modeSelect.value;
-    const ghToken = document.getElementById('gh_token').value.trim();
-    const glToken = document.getElementById('gl_token').value.trim();
-    const sourceId = document.getElementById('source_id').value.trim();
-    const visibility = document.getElementById('visibility').value;
+    /** @type {HTMLInputElement} */ const ghTokenInput = document.getElementById('gh_token');
+    /** @type {HTMLInputElement} */ const glTokenInput = document.getElementById('gl_token');
+    /** @type {HTMLInputElement} */ const sourceIdInput = document.getElementById('source_id');
+    /** @type {HTMLSelectElement} */ const visibilitySelect = document.getElementById('visibility');
+    const ghToken = (ghTokenInput ? ghTokenInput.value : '').trim();
+    const glToken = (glTokenInput ? glTokenInput.value : '').trim();
+    const sourceId = (sourceIdInput ? sourceIdInput.value : '').trim();
+    const visibility = visibilitySelect ? visibilitySelect.value : 'private';
 
-    const resultsEl = mainButtonContainer.querySelector('.results');
+    /** @type {HTMLElement} */ const resultsEl = mainButtonContainer.querySelector('.results');
+    /** @type {HTMLButtonElement} */ const convertBtn = mainButtonContainer.querySelector('button.primary_button');
+
+    // Prevent spam-clicks if already disabled
+    if (convertBtn && convertBtn.disabled) {
+      return;
+    }
+
     resultsEl.innerHTML = '';
 
+    // Basic validation before we enter the waiting state
+    if (!sourceId) { resultsEl.innerHTML = '<p class="error">Please provide the source ID.</p>'; return; }
+
+    let timeoutHandle = null;
     try {
-      if (!sourceId) throw new Error('Please provide the source ID.');
+      // Additional cross-mode token validation
       if (mode === 'snippets') {
-        if (!ghToken || !glToken) throw new Error('Please provide both GitHub and GitLab tokens.');
+        if (!ghToken || !glToken) { resultsEl.innerHTML = '<p class="error">Please provide both GitHub and GitLab tokens.</p>'; return; }
+      } else {
+        if (!glToken || !ghToken) { resultsEl.innerHTML = '<p class="error">Please provide both GitLab and GitHub tokens.</p>'; return; }
+      }
+
+      // Enter waiting state and disable button
+      if (convertBtn) {
+        convertBtn.disabled = true;
+        convertBtn.classList.add('is-disabled');
+      }
+      resultsEl.innerHTML = '<p class="waiting">Conversion in progress… please wait. Do not close this page.</p>';
+
+      // Auto re-enable after the 30s if still waiting
+      timeoutHandle = setTimeout(() => {
+        if (convertBtn) {
+          convertBtn.disabled = false;
+          convertBtn.classList.remove('is-disabled');
+        }
+        if (resultsEl && resultsEl.querySelector('.waiting')) {
+          resultsEl.innerHTML = '<p class="error">30 seconds passed without a response. Please try again.</p>';
+        }
+      }, 30000);
+      if (mode === 'snippets') {
         const gist = await fetchGist(sourceId, ghToken);
         const fileEntries = Object.entries(gist.files || {});
-        if (fileEntries.length === 0) throw new Error('This Gist has no files.');
+        if (fileEntries.length === 0) { resultsEl.innerHTML = '<p class="error">This Gist has no files.</p>'; return; }
 
         // Collect all files with content
         const filesWithContent = [];
@@ -130,10 +203,9 @@
           return `<p>Snippet ${id}: <a target="_blank" href="${url}">${url}</a></p>`;
         }).join('');
       } else {
-        if (!glToken || !ghToken) throw new Error('Please provide both GitLab and GitHub tokens.');
         const meta = await fetchGitLabSnippetMeta(sourceId, glToken);
 
-        // If multi-file info is present, fetch all files. Otherwise fallback to single raw endpoint
+        // If multi-file info is present, fetch all files. Otherwise, fallback to a single raw endpoint
         let files = {};
         if (Array.isArray(meta.files) && meta.files.length > 0) {
           const usedNames = new Map();
@@ -147,7 +219,7 @@
               const is404 = String(status) === '404' || String(err && err.message || '').includes('404');
               if (is404) {
                 if (Array.isArray(meta.files) && meta.files.length === 1) {
-                  // Single-file snippet: fallback to whole snippet raw content
+                  // Single-file snippet: fallback to the whole snippet raw content
                   raw = await fetchGitLabSnippetRaw(sourceId, glToken);
                 } else {
                   // Multi-file snippet: avoid web raw_url due to CORS; rely on API-only fallbacks
@@ -155,7 +227,8 @@
                   continue;
                 }
               } else {
-                throw err;
+                resultsEl.innerHTML = `<p class="error">Failed to fetch a file from the GitLab snippet (${sanitizeGistFileName(originalPath)}): ${err && err.message ? String(err.message) : 'Unknown error'}</p>`;
+                return;
               }
             }
             let sanitized = sanitizeGistFileName(originalPath);
@@ -181,7 +254,7 @@
               const fileName = meta.files[0].file_name || meta.files[0].file_path || 'snippet.txt';
               files[sanitizeGistFileName(fileName)] = { content };
             } else {
-              throw new Error('No files could be fetched from this GitLab snippet (file endpoints returned 404).');
+              resultsEl.innerHTML = '<p class="error">No files could be fetched from this GitLab snippet (file endpoints returned 404).</p>'; return;
             }
           }
         } else {
@@ -203,9 +276,22 @@
     } catch (e) {
       console.error(e);
       resultsEl.innerHTML = `<p class="error">${e.message || 'Conversion failed.'}</p>`;
+    } finally {
+      if (timeoutHandle) {
+        try { clearTimeout(timeoutHandle); } catch (_) {}
+      }
+      if (convertBtn) {
+        convertBtn.disabled = false;
+        convertBtn.classList.remove('is-disabled');
+      }
+      const waitingEl = resultsEl ? resultsEl.querySelector('.waiting') : null;
+      if (waitingEl && waitingEl.parentNode) {
+        waitingEl.parentNode.removeChild(waitingEl);
+      }
     }
   }
 
+  /** @returns {Promise<Gist>} */
   async function fetchGist(id, token) {
     const res = await fetch(`https://api.github.com/gists/${encodeURIComponent(id)}`, {
       headers: {
@@ -223,48 +309,20 @@
     if (fileInfo && typeof fileInfo.content === 'string' && !fileInfo.truncated) {
       return fileInfo.content;
     }
-    // Re-fetch the gist to try to obtain inline content
+    // Re-fetch the gist to try to get inline content
     const gist = await fetchGist(gistId, token);
     const file = gist?.files?.[fileName];
     if (file && typeof file.content === 'string' && !file.truncated) {
       return file.content;
     }
-    // At this point, the file is likely too large and the API provides only a truncated preview.
-    // Fetching raw_url would require CORS to gist.githubusercontent.com which blocks preflight, so inform user.
+    // At this point, the file is likely too large, and the API provides only a truncated preview.
+    // Fetching raw_url would require CORS to gist.githubusercontent.com which blocks preflight, so inform the user.
     throw new Error('This Gist file content is not available inline (likely too large/truncated). Browser-only fetch cannot access the raw URL due to CORS. Consider reducing file size, using a different network/origin setup, or a small server-side proxy.');
   }
 
-  async function fetchRaw(url, token) {
-    const res = await fetch(url, {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-    });
-    if (!res.ok) throw new Error(`Raw content fetch failed: ${res.status}`);
-    return res.text();
-  }
 
-  async function createGitLabSnippet({ token, title, file_name, content, visibility }) {
-    const form = new URLSearchParams();
-    form.set('title', title || file_name || 'from-gist');
-    form.set('file_name', file_name || 'file.txt');
-    form.set('content', content || '');
-    form.set('visibility', visibility || 'private');
 
-    const res = await fetch('https://gitlab.com/api/v4/snippets', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-      body: form.toString(),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`GitLab create snippet failed: ${res.status} ${text}`);
-    }
-    return res.json();
-  }
-
+  /** @returns {Promise<GitLabSnippetMeta>} */
   async function fetchGitLabSnippetMeta(id, token) {
     const res = await fetch(`https://gitlab.com/api/v4/snippets/${encodeURIComponent(id)}`, {
       headers: {
@@ -299,7 +357,7 @@
     const attempts = [];
     const seen = new Set();
 
-    // 1) API whole-snippet raw with file_path query
+    // 1) API whole-snippet raw with a file_path query
     const baseRaw = `https://gitlab.com/api/v4/snippets/${encodeURIComponent(id)}/raw`;
     for (const enc of encodings) {
       for (const ref of refs) {
@@ -338,7 +396,7 @@
       if (res.ok) {
         return res.text();
       }
-      // Only continue to next attempt on 404/400; other statuses should surface immediately
+      // Only continue to the next attempt on 404/400; other statuses should surface immediately
       if (res.status && res.status !== 404 && res.status !== 400) {
         const text = await res.text().catch(() => '');
         const err = new Error(`GitLab snippet file raw fetch failed for ${filePath}: ${res.status} ${text}`);
@@ -358,6 +416,7 @@
     return replaced || 'file.txt';
   }
 
+  /** @returns {Promise<CreatedGist>} */
   async function createGist({ token, description, files, public: isPublic }) {
     const res = await fetch('https://api.github.com/gists', {
       method: 'POST',
@@ -384,6 +443,7 @@
     return out;
   }
 
+  /** @returns {Promise<GitLabSnippetMeta>} */
   async function createGitLabSnippetMulti({ token, title, files, visibility }) {
     if (!Array.isArray(files) || files.length === 0) {
       throw new Error('No files to create in GitLab snippet.');

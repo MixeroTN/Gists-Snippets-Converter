@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+:root {
+  --text-primary: #252a32;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -165,4 +169,54 @@ object {
 
 :focus {
   outline: none;
+}
+
+
+/* Primary button styles and disabled feedback */
+.primary_button {
+  display: inline-block;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #fc6d27;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary_button:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+.primary_button:disabled,
+.primary_button.is-disabled {
+  opacity: 0.6;
+  cursor: not-allowed; /* shows circle with slash cursor */
+}
+.primary_button:disabled:hover,
+.primary_button.is-disabled:hover {
+  cursor: not-allowed;
+}
+
+/* Results area */
+.results {
+  margin-top: 12px;
+}
+.results .waiting {
+  color: #666;
+  font-style: italic;
+}
+
+
+/* Spacing above the main button area to avoid touching the card above */
+.main_button {
+  margin-top: 16px;
+}
+
+/* Make links in results look like standard links */
+.results a {
+  color: #0969da; /* GitHub-like link color */
+  text-decoration: underline;
+}
+.results a:hover {
+  color: #0759b6;
+  text-decoration-color: #0759b6;
 }

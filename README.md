@@ -40,7 +40,10 @@ Tokens are never stored or transmitted anywhere except directly to the respectiv
 This project is a static web app. You can use any static server, for example:
 
 ```bash
-# Using Node (serve) or any other static server of your choice
+# Using the included script (requires Node):
+npm run serve
+
+# Or using any other static server of your choice:
 npx serve .
 ```
 
