@@ -43,7 +43,7 @@
               <option value="internal">Internal</option>
             </select>
           </div>
-          <p class="note">If the Gist has multiple files, one GitLab snippet will be created per file due to GitLab personal snippets limitation.</p>
+          <p class="note">GitLab personal snippets can include up to 10 files. If the Gist has more than 10 files, multiple snippets will be created in parts (up to 10 files per snippet).</p>
         </div>
       `;
     } else {
@@ -61,7 +61,7 @@
               <option value="public">Public</option>
             </select>
           </div>
-          <p class="note">This supports personal snippets (single-file). If the snippet has multiple files, only the main file content will be migrated via raw endpoint.</p>
+          <p class="note">Supports multi-file personal snippets: all files will be transferred to a single GitHub Gist. If files are in folders, folder separators will be replaced with "__" in Gist filenames.</p>
         </div>
       `;
     }
@@ -99,18 +99,29 @@
         const fileEntries = Object.entries(gist.files || {});
         if (fileEntries.length === 0) throw new Error('This Gist has no files.');
 
-        const created = [];
+        // Collect all files with content
+        const filesWithContent = [];
         for (const [filename, fileInfo] of fileEntries) {
           const content = await fetchGistFileContent(sourceId, filename, ghToken, fileInfo);
-          const title = gist.description || filename;
-          const snippet = await createGitLabSnippet({
+          filesWithContent.push({ file_path: filename, content });
+        }
+
+        // Chunk into groups of up to 10 files per GitLab snippet
+        const chunks = chunkArray(filesWithContent, 10);
+        const created = [];
+        let part = 1;
+        const totalParts = chunks.length;
+        for (const chunk of chunks) {
+          const baseTitle = gist.description || 'from-gist';
+          const title = totalParts > 1 ? `${baseTitle} (part ${part}/${totalParts})` : baseTitle;
+          const snippet = await createGitLabSnippetMulti({
             token: glToken,
             title,
-            file_name: filename,
-            content,
-            visibility: visibility,
+            files: chunk,
+            visibility,
           });
           created.push(snippet);
+          part++;
         }
 
         resultsEl.innerHTML = `<h3>Created GitLab Snippet(s)</h3>` + created.map(s => {
@@ -121,11 +132,63 @@
       } else {
         if (!glToken || !ghToken) throw new Error('Please provide both GitLab and GitHub tokens.');
         const meta = await fetchGitLabSnippetMeta(sourceId, glToken);
-        const content = await fetchGitLabSnippetRaw(sourceId, glToken);
 
-        const files = {};
-        const fileName = meta.file_name || 'snippet.txt';
-        files[fileName] = { content };
+        // If multi-file info is present, fetch all files. Otherwise fallback to single raw endpoint
+        let files = {};
+        if (Array.isArray(meta.files) && meta.files.length > 0) {
+          const usedNames = new Map();
+          for (const f of meta.files) {
+            const originalPath = f.file_path || f.path || f.file_name || 'file.txt';
+            let raw;
+            try {
+              raw = await fetchGitLabSnippetFileRaw(sourceId, originalPath, glToken);
+            } catch (err) {
+              const status = err && (err.status || (/\b(\d{3})\b/.exec(String(err.message || '')) || [])[1]);
+              const is404 = String(status) === '404' || String(err && err.message || '').includes('404');
+              if (is404) {
+                if (Array.isArray(meta.files) && meta.files.length === 1) {
+                  // Single-file snippet: fallback to whole snippet raw content
+                  raw = await fetchGitLabSnippetRaw(sourceId, glToken);
+                } else {
+                  // Multi-file snippet: avoid web raw_url due to CORS; rely on API-only fallbacks
+                  console.warn(`Skipping missing file in GitLab snippet: ${originalPath} (404). API per-file and alt raw attempts failed; web raw_url is blocked by CORS in browsers.`);
+                  continue;
+                }
+              } else {
+                throw err;
+              }
+            }
+            let sanitized = sanitizeGistFileName(originalPath);
+            // deduplicate if name collision after sanitization
+            if (usedNames.has(sanitized)) {
+              const count = usedNames.get(sanitized) + 1;
+              usedNames.set(sanitized, count);
+              const dot = sanitized.lastIndexOf('.');
+              if (dot > 0) {
+                sanitized = `${sanitized.slice(0, dot)}_${count}${sanitized.slice(dot)}`;
+              } else {
+                sanitized = `${sanitized}_${count}`;
+              }
+            } else {
+              usedNames.set(sanitized, 0);
+            }
+            files[sanitized] = { content: raw };
+          }
+          // If after attempts no files were gathered, try a final fallback or error
+          if (Object.keys(files).length === 0) {
+            if (Array.isArray(meta.files) && meta.files.length === 1) {
+              const content = await fetchGitLabSnippetRaw(sourceId, glToken);
+              const fileName = meta.files[0].file_name || meta.files[0].file_path || 'snippet.txt';
+              files[sanitizeGistFileName(fileName)] = { content };
+            } else {
+              throw new Error('No files could be fetched from this GitLab snippet (file endpoints returned 404).');
+            }
+          }
+        } else {
+          const content = await fetchGitLabSnippetRaw(sourceId, glToken);
+          const fileName = meta.file_name || 'snippet.txt';
+          files[fileName] = { content };
+        }
 
         const gist = await createGist({
           token: ghToken,
@@ -223,6 +286,78 @@
     return res.text();
   }
 
+  // Fetch raw content of a specific file in a multi-file GitLab snippet
+  async function fetchGitLabSnippetFileRaw(id, filePath, token) {
+    // Prefer API forms that support CORS in browsers. Avoid the noisy per-file endpoint
+    // /api/v4/snippets/:id/files/:path/raw which often returns 404 for personal snippets.
+    const single = encodeURIComponent(filePath);
+    const doubled = encodeURIComponent(single); // try both encodings
+
+    const encodings = doubled !== single ? [doubled, single] : [single];
+    const refs = ['main', 'master', undefined];
+
+    const attempts = [];
+    const seen = new Set();
+
+    // 1) API whole-snippet raw with file_path query
+    const baseRaw = `https://gitlab.com/api/v4/snippets/${encodeURIComponent(id)}/raw`;
+    for (const enc of encodings) {
+      for (const ref of refs) {
+        const url = ref
+          ? `${baseRaw}?file_path=${enc}&ref=${encodeURIComponent(ref)}`
+          : `${baseRaw}?file_path=${enc}`;
+        if (!seen.has(url)) {
+          seen.add(url);
+          attempts.push(url);
+        }
+      }
+    }
+
+    // 2) Repository files API via the snippet repository
+    const projectIdPath = encodeURIComponent(`snippets/${id}`); // encodes the slash
+    const repoBase = `https://gitlab.com/api/v4/projects/${projectIdPath}/repository/files/`;
+    for (const enc of encodings) {
+      for (const ref of refs) {
+        const url = ref
+          ? `${repoBase}${enc}/raw?ref=${encodeURIComponent(ref)}`
+          : `${repoBase}${enc}/raw`;
+        if (!seen.has(url)) {
+          seen.add(url);
+          attempts.push(url);
+        }
+      }
+    }
+
+    for (const url of attempts) {
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/plain, */*',
+        },
+      });
+      if (res.ok) {
+        return res.text();
+      }
+      // Only continue to next attempt on 404/400; other statuses should surface immediately
+      if (res.status && res.status !== 404 && res.status !== 400) {
+        const text = await res.text().catch(() => '');
+        const err = new Error(`GitLab snippet file raw fetch failed for ${filePath}: ${res.status} ${text}`);
+        err.status = res.status;
+        err.url = url;
+        throw err;
+      }
+    }
+    const notFoundErr = new Error(`GitLab snippet file raw fetch failed for ${filePath}: 404`);
+    notFoundErr.status = 404;
+    throw notFoundErr;
+  }
+
+  // Sanitize GitLab snippet file paths to valid Gist filenames (no directories)
+  function sanitizeGistFileName(path) {
+    const replaced = String(path).replace(/[\\/]+/g, '__').trim();
+    return replaced || 'file.txt';
+  }
+
   async function createGist({ token, description, files, public: isPublic }) {
     const res = await fetch('https://api.github.com/gists', {
       method: 'POST',
@@ -236,6 +371,40 @@
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`GitHub create gist failed: ${res.status} ${text}`);
+    }
+    return res.json();
+  }
+
+  // Helpers for multi-file GitLab snippets
+  function chunkArray(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) {
+      out.push(arr.slice(i, i + size));
+    }
+    return out;
+  }
+
+  async function createGitLabSnippetMulti({ token, title, files, visibility }) {
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error('No files to create in GitLab snippet.');
+    }
+    const payload = {
+      title: title || 'from-gist',
+      visibility: visibility || 'private',
+      files: files.map(f => ({ file_path: f.file_path, content: f.content }))
+    };
+    const res = await fetch('https://gitlab.com/api/v4/snippets', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`GitLab create multi-file snippet failed: ${res.status} ${text}`);
     }
     return res.json();
   }
